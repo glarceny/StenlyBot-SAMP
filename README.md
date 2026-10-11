@@ -1,6 +1,6 @@
 # StenlyBot-SAMP
 
-WhatsApp Bot khusus untuk manajemen SA-MP (San Andreas Multiplayer) Whitelist via Pterodactyl Panel API, dilengkapi sistem plugin dinamis, manajemen grup, dan tools utilitas.
+WhatsApp Bot khusus untuk manajemen SA-MP (San Andreas Multiplayer) Whitelist via direct SFTP connection, dilengkapi sistem plugin dinamis, manajemen grup, dan tools utilitas.
 
 Dibangun menggunakan Node.js dan Baileys (`@itsliaaa/baileys`).
 
@@ -8,12 +8,12 @@ Dibangun menggunakan Node.js dan Baileys (`@itsliaaa/baileys`).
 
 ## Fitur Utama
 
-- **SA-MP Whitelist Manager**
-  - Terintegrasi langsung dengan Pterodactyl Panel Client API (`/scriptfiles/whitelist/`).
+- **SA-MP Whitelist Manager (Direct SFTP)**
+  - Terintegrasi langsung via protokol SFTP (SSH) ke direktori server SA-MP (`/scriptfiles/whitelist/`).
   - Request whitelist karakter SA-MP (`/whitelist <Nama_Karakter>`).
   - Hapus whitelist karakter (`/unwhitelist <Nama_Karakter>`).
   - Cek daftar whitelist (`/listwl`).
-  - Konfigurasi panel dinamis (`/setconfigwl`).
+  - Konfigurasi SFTP dinamis dari WhatsApp (`/setconfigwl`).
 - **WhatsApp Pairing Code** (Dukungan custom pairing code).
 - **Interactive Menu** (WhatsApp Button / List Menu).
 - **Role & Access Control** (Owner, Premium, Creator).
@@ -37,7 +37,7 @@ npm install
 ```
 
 ### 3. Konfigurasi
-Buka file `control/settings.js` dan sesuaikan pengaturan bot serta Pterodactyl Panel:
+Buka file `control/settings.js` dan sesuaikan pengaturan bot serta akses SFTP server SA-MP Anda:
 
 ```javascript
 global.namaown = "Nama Owner"
@@ -45,15 +45,17 @@ global.prefix = "/"
 global.botname = "StenlyBot-SAMP"
 global.owner = ["6285199553371"]
 
-// Konfigurasi Pterodactyl Panel untuk SA-MP
 global.samp = {
-    domain: "https://panel-pterodactyl-anda.com",
-    pltc: "ptlc_client_api_key_anda",
-    serverId: "server_id_anda",
+    sftp: {
+        host: "103.xxx.xxx.xxx",
+        port: 22,
+        username: "root",
+        password: "your_password"
+    },
     path: "/scriptfiles/whitelist/",
     extension: ".txt",
     serverName: "Nama Server SA-MP Anda",
-    ip: "127.0.0.1",
+    ip: "103.xxx.xxx.xxx",
     port: "7777",
     gamemode: "Roleplay"
 }
@@ -95,14 +97,14 @@ Default Prefix: `/`
 
 ### 🎮 SA-MP Whitelist
 ```text
-/whitelist <Nama_Karakter>    - Daftarkan karakter ke whitelist SA-MP
-/unwhitelist <Nama_Karakter>  - Hapus karakter dari whitelist
-/listwl                       - Tampilkan daftar karakter terdaftar
+/whitelist <Nama_Karakter>    - Daftarkan karakter ke whitelist SA-MP via SFTP
+/unwhitelist <Nama_Karakter>  - Hapus karakter dari whitelist via SFTP
+/listwl                       - Tampilkan daftar karakter terdaftar via SFTP
 ```
 
 ### 👑 Owner
 ```text
-/setconfigwl                  - Ubah setting server Pterodactyl
+/setconfigwl                  - Ubah konfigurasi SFTP dan server SA-MP
 /addowner <nomor>             - Tambah nomor owner
 /delowner <nomor>             - Hapus owner
 /addprem <nomor>              - Tambah user premium
@@ -140,16 +142,17 @@ $ <bash cmd>                  - Eksekusi bash terminal
 ```text
 StenlyBot-SAMP/
 ├── control/
-│   └── settings.js       # Konfigurasi bot dan server SA-MP
+│   └── settings.js       # Konfigurasi bot dan SFTP SA-MP
 ├── index.js              # Entry point koneksi Baileys & pairing code
 ├── stenly.js             # Handler event pesan utama
 ├── lib/
+│   ├── sftp.js           # Client SFTP untuk read/write/delete whitelist remote
 │   ├── database/         # Database JSON lokal (whitelist, antilink, owner, premium)
 │   ├── plugins.js        # Plugin loader & auto hot-reload
 │   ├── menu.js           # Layout menu interaktif
 │   └── ...
 └── plugins/
-    ├── samp/             # Plugin fitur whitelist SA-MP
+    ├── samp/             # Plugin fitur whitelist SA-MP via SFTP
     ├── owner/            # Plugin kontrol owner
     ├── grup/             # Plugin fitur grup
     ├── tools/            # Plugin utilitas

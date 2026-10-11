@@ -1,9 +1,3 @@
-// ===================================================
-//  Stenly WhatsApp Bot
-//  Creator : Stenly Christian
-//  Updated : 13 September 2026
-// ===================================================
-
 const { resolveTarget, readList, writeList, verifyWhatsAppNumber } = require('../../lib/target');
 
 module.exports = {

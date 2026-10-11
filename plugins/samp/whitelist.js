@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
 const { categorySections } = require("../../lib/menu");
+const { writeRemoteFile, checkRemoteFileExists } = require("../../lib/sftp");
 
 const DB_PATH = path.join(__dirname, "../../lib/database/whitelist.json");
 
@@ -35,89 +35,6 @@ function cleanNumber(jid) {
     return String(jid || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 }
 
-async function writePterodactylFile(sampConfig, fileName, content) {
-    const domain = (sampConfig.domain || "").replace(/\/+$/, "");
-    const serverId = sampConfig.serverId;
-    const apiKey = sampConfig.pltc;
-    const folderPath = (sampConfig.path || "/scriptfiles/whitelist/").replace(/\\/g, "/");
-    const normalizedFolder = folderPath.endsWith("/") ? folderPath : `${folderPath}/`;
-    const fullFilePath = `${normalizedFolder}${fileName}`;
-
-    if (!apiKey || apiKey.includes("YOUR_PTERODACTYL") || !domain || domain.includes("example.com") || !serverId) {
-        console.log(`[WHITELIST SIMULATED] File ${fullFilePath} disimulasikan sukses (konfigurasi panel belum diisi).`);
-        return {
-            success: true,
-            simulated: true,
-            filePath: fullFilePath,
-            message: "Tersimpan di database lokal (Pterodactyl config belum diatur)."
-        };
-    }
-
-    try {
-        const url = `${domain}/api/client/servers/${serverId}/files/write?file=${encodeURIComponent(fullFilePath)}`;
-        const response = await axios({
-            method: "POST",
-            url,
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "text/plain",
-                "Accept": "application/json, text/plain, */*"
-            },
-            data: content,
-            timeout: 15000
-        });
-
-        return {
-            success: response.status >= 200 && response.status < 300,
-            simulated: false,
-            status: response.status,
-            filePath: fullFilePath
-        };
-    } catch (error) {
-        const status = error.response?.status;
-        const errDetail = error.response?.data?.errors?.[0]?.detail || error.message;
-        console.error(`[WHITELIST PTERODACTYL ERROR] ${status || "NET"}: ${errDetail}`);
-        return {
-            success: false,
-            simulated: false,
-            error: errDetail,
-            status
-        };
-    }
-}
-
-async function checkPterodactylFileExists(sampConfig, fileName) {
-    const domain = (sampConfig.domain || "").replace(/\/+$/, "");
-    const serverId = sampConfig.serverId;
-    const apiKey = sampConfig.pltc;
-    const folderPath = (sampConfig.path || "/scriptfiles/whitelist/").replace(/\\/g, "/");
-    const normalizedFolder = folderPath.replace(/\/+$/, "");
-
-    if (!apiKey || apiKey.includes("YOUR_PTERODACTYL") || !domain || domain.includes("example.com") || !serverId) {
-        return null;
-    }
-
-    try {
-        const url = `${domain}/api/client/servers/${serverId}/files/list?directory=${encodeURIComponent(normalizedFolder)}`;
-        const response = await axios({
-            method: "GET",
-            url,
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Accept": "application/json"
-            },
-            timeout: 10000
-        });
-
-        const files = response.data?.data || [];
-        const exists = files.some(f => (f.attributes?.name || "").toLowerCase() === fileName.toLowerCase());
-        return exists;
-    } catch (error) {
-        console.error(`[WHITELIST CHECK ERROR] ${error.message}`);
-        return null;
-    }
-}
-
 function makeButtons(prefix, plugins) {
     return [
         {
@@ -144,7 +61,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
     const { botName, prefix, thumb, plugins } = ctx;
     const contentText = `\`「 ${botName} 」\``;
     const footerText = `\`「 ${title} 」\`\n${lines.join('\n')}\n\n_*Tekan tombol di bawah untuk melihat semua menu*_`;
-    
+
     try {
         const menuMessage = generateWAMessageFromContent(m.chat, {
             buttonsMessage: {
@@ -161,7 +78,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
                 headerType: 6
             }
         }, { userJid: m.chat, upload: sock.waUploadToServer });
-        
+
         return await sock.relayMessage(m.chat, menuMessage.message, { messageId: menuMessage.key.id });
     } catch (_) {
         return ctx.reply(`${contentText}\n\n${footerText}`);
@@ -256,9 +173,14 @@ async function handleWhitelist(context) {
     }
 
     const fileName = `${inputName}${extension}`;
-    const fileExistsOnPanel = await checkPterodactylFileExists(sampConfig, fileName);
+    let fileExistsOnServer = null;
+    try {
+        fileExistsOnServer = await checkRemoteFileExists(sampConfig, fileName);
+    } catch (err) {
+        console.error("[WHITELIST SFTP CHECK ERROR]", err.message);
+    }
 
-    if (fileExistsOnPanel === true) {
+    if (fileExistsOnServer === true) {
         return sendMenuStyle(sock, m, context, "Nama Sudah Terdaftar", [
             `> Nama : *${inputName}*`,
             "> Status : *File Sudah Ada di Server*",
@@ -285,13 +207,18 @@ async function handleWhitelist(context) {
         `===========================================`
     ].join("\n");
 
-    const pteroResult = await writePterodactylFile(sampConfig, fileName, fileContent);
+    let sftpResult;
+    try {
+        sftpResult = await writeRemoteFile(sampConfig, fileName, fileContent);
+    } catch (err) {
+        sftpResult = { success: false, simulated: false, error: err.message };
+    }
 
-    if (!pteroResult.success && !pteroResult.simulated) {
+    if (!sftpResult.success && !sftpResult.simulated) {
         return sendMenuStyle(sock, m, context, "Gagal Menulis Whitelist", [
-            "> Status : *Gagal Menghubungi Panel Pterodactyl*",
+            "> Status : *Gagal Menghubungi Server via SFTP*",
             `> Target File : *${fileName}*`,
-            `> Error : *${pteroResult.error || "Connection Timeout / Unauthorized"}*`,
+            `> Error : *${sftpResult.error || "Connection Timeout / Auth Failed"}*`,
             "",
             "Harap laporkan kendala ini kepada Owner/Admin Server."
         ]);
@@ -309,7 +236,7 @@ async function handleWhitelist(context) {
         gamemode: gamemode,
         fileName: fileName,
         path: `${savePath}${fileName}`,
-        simulated: pteroResult.simulated || false
+        simulated: sftpResult.simulated || false
     };
     writeDatabase(db);
 
@@ -334,7 +261,7 @@ module.exports = {
     name: "whitelist",
     category: "samp",
     command: ["wl", "whitelist"],
-    description: "Pendaftaran whitelist pemain SA-MP ke Pterodactyl",
+    description: "Pendaftaran whitelist pemain SA-MP via SFTP",
     before: async (context) => {
         const { body, prefix } = context;
         const bodyTrim = (body || "").trim();
@@ -342,7 +269,7 @@ module.exports = {
 
         const firstWord = bodyTrim.split(/\s+/)[0].toLowerCase();
         const validTriggers = [".wl", ".whitelist", `${prefix}wl`, `${prefix}whitelist`];
-        
+
         if (validTriggers.includes(firstWord)) {
             const parts = bodyTrim.split(/\s+/);
             parts.shift();

@@ -1,9 +1,3 @@
-// ===================================================
-//  Stenly WhatsApp Bot
-//  Creator : Stenly Christian
-//  Updated : 13 September 2026
-// ===================================================
-
 const util = require('util');
 const { exec } = require('child_process');
 

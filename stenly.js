@@ -1,9 +1,3 @@
-// ===================================================
-//  Stenly WhatsApp Bot - Modular Core Handler
-//  Creator : Stenly Christian
-//  Updated : 13 September 2026
-// ===================================================
-
 require('./control/settings');
 const fs = require('fs');
 const sharp = require('sharp');
@@ -84,7 +78,7 @@ function formatDate(timestamp) {
 
 module.exports = async (sock, m, chatUpdate, store) => {
     try {
-        if (isDuplicateMsg(m)) return; // Baileys kadang kirim ulang pesan yg sama
+        if (isDuplicateMsg(m)) return;
         const body = (
             m.mtype === "conversation" ? m.message.conversation :
             m.mtype === "imageMessage" ? m.message.imageMessage.caption :

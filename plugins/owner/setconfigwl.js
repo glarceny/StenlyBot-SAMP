@@ -10,9 +10,12 @@ function saveSettingsFile(sampConfig) {
         let content = fs.readFileSync(SETTINGS_PATH, "utf8");
         const sampRegex = /global\.samp\s*=\s*\{[\s\S]*?\n\}/;
         const newSampBlock = `global.samp = {
-    domain: ${JSON.stringify(sampConfig.domain || "")},
-    pltc: ${JSON.stringify(sampConfig.pltc || "")},
-    serverId: ${JSON.stringify(sampConfig.serverId || "")},
+    sftp: {
+        host: ${JSON.stringify(sampConfig.sftp?.host || "")},
+        port: ${Number(sampConfig.sftp?.port || 22)},
+        username: ${JSON.stringify(sampConfig.sftp?.username || "")},
+        password: ${JSON.stringify(sampConfig.sftp?.password || "")}
+    },
     path: ${JSON.stringify(sampConfig.path || "/scriptfiles/whitelist/")},
     extension: ${JSON.stringify(sampConfig.extension || ".txt")},
     serverName: ${JSON.stringify(sampConfig.serverName || "")},
@@ -59,7 +62,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
     const { botName, prefix, thumb, plugins } = ctx;
     const contentText = `\`「 ${botName} 」\``;
     const footerText = `\`「 ${title} 」\`\n${lines.join('\n')}\n\n_*Tekan tombol di bawah untuk melihat semua menu*_`;
-    
+
     try {
         const menuMessage = generateWAMessageFromContent(m.chat, {
             buttonsMessage: {
@@ -76,7 +79,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
                 headerType: 6
             }
         }, { userJid: m.chat, upload: sock.waUploadToServer });
-        
+
         return await sock.relayMessage(m.chat, menuMessage.message, { messageId: menuMessage.key.id });
     } catch (_) {
         return ctx.reply(`${contentText}\n\n${footerText}`);
@@ -96,9 +99,7 @@ async function handleSetConfigWl(context) {
 
     if (!global.samp) {
         global.samp = {
-            domain: "",
-            pltc: "",
-            serverId: "",
+            sftp: { host: "", port: 22, username: "", password: "" },
             path: "/scriptfiles/whitelist/",
             extension: ".txt",
             serverName: "SA-MP Server",
@@ -106,6 +107,9 @@ async function handleSetConfigWl(context) {
             port: "7777",
             gamemode: "Roleplay"
         };
+    }
+    if (!global.samp.sftp) {
+        global.samp.sftp = { host: "", port: 22, username: "", password: "" };
     }
 
     const cfg = global.samp;
@@ -116,20 +120,22 @@ async function handleSetConfigWl(context) {
             "> Akses : *Khusus Owner*",
             "",
             "*Status Konfigurasi Saat Ini:*",
-            `> Domain : *${cfg.domain || "-"}*`,
-            `> Server ID : *${cfg.serverId || "-"}*`,
-            `> PLTC : *${cfg.pltc ? (cfg.pltc.slice(0, 10) + "..." + cfg.pltc.slice(-4)) : "-"}*`,
+            `> SFTP Host : *${cfg.sftp.host || "-"}*`,
+            `> SFTP Port : *${cfg.sftp.port || 22}*`,
+            `> SFTP User : *${cfg.sftp.username || "-"}*`,
+            `> SFTP Pass : *${cfg.sftp.password ? "******" : "-"}*`,
             `> Path : *${cfg.path || "/scriptfiles/whitelist/"}*`,
             `> Ext : *${cfg.extension || ".txt"}*`,
             `> Nama Server : *${cfg.serverName || "-"}*`,
-            `> IP : *${cfg.ip || "-"}*`,
-            `> Port : *${cfg.port || "-"}*`,
+            `> IP Server : *${cfg.ip || "-"}*`,
+            `> Port Server : *${cfg.port || "-"}*`,
             `> Gamemode : *${cfg.gamemode || "-"}*`,
             "",
             "*Cara Mengubah Konfigurasi:*",
-            `> *${prefix}setconfigwl domain <url>*`,
-            `> *${prefix}setconfigwl pltc <token>*`,
-            `> *${prefix}setconfigwl serverid <id>*`,
+            `> *${prefix}setconfigwl sftphost <host>*`,
+            `> *${prefix}setconfigwl sftpport <port>*`,
+            `> *${prefix}setconfigwl sftpuser <user>*`,
+            `> *${prefix}setconfigwl sftppass <password>*`,
             `> *${prefix}setconfigwl path <path_folder>*`,
             `> *${prefix}setconfigwl ext <ekstensi>*`,
             `> *${prefix}setconfigwl name <nama_server>*`,
@@ -138,9 +144,9 @@ async function handleSetConfigWl(context) {
             `> *${prefix}setconfigwl gamemode <mode>*`,
             "",
             "*Contoh:*",
-            `> *${prefix}setconfigwl ip 103.123.45.67*`,
-            `> *${prefix}setconfigwl port 7777*`,
-            `> *${prefix}setconfigwl name Stenly Pride RP*`
+            `> *${prefix}setconfigwl sftphost 103.123.45.67*`,
+            `> *${prefix}setconfigwl sftpuser root*`,
+            `> *${prefix}setconfigwl sftppass rahasia123*`
         ]);
     }
 
@@ -157,15 +163,18 @@ async function handleSetConfigWl(context) {
     }
 
     let keyLabel = "";
-    if (sub === "domain") {
-        cfg.domain = value.replace(/\/+$/, "");
-        keyLabel = "Domain Panel Pterodactyl";
-    } else if (sub === "pltc") {
-        cfg.pltc = value;
-        keyLabel = "Token Client API (PLTC)";
-    } else if (sub === "serverid" || sub === "id") {
-        cfg.serverId = value;
-        keyLabel = "Server Identifier ID";
+    if (sub === "sftphost" || sub === "host") {
+        cfg.sftp.host = value;
+        keyLabel = "SFTP Host";
+    } else if (sub === "sftpport") {
+        cfg.sftp.port = Number(value) || 22;
+        keyLabel = "SFTP Port";
+    } else if (sub === "sftpuser" || sub === "user") {
+        cfg.sftp.username = value;
+        keyLabel = "SFTP Username";
+    } else if (sub === "sftppass" || sub === "pass") {
+        cfg.sftp.password = value;
+        keyLabel = "SFTP Password";
     } else if (sub === "path") {
         const norm = value.replace(/\\/g, "/");
         cfg.path = norm.endsWith("/") ? norm : `${norm}/`;
@@ -189,40 +198,46 @@ async function handleSetConfigWl(context) {
         return sendMenuStyle(sock, m, context, "Kunci Tidak Dikenal", [
             "> Status : *Kunci Konfigurasi Salah*",
             `> Pilihan yang Disediakan:`,
-            "- domain",
-            "- pltc",
-            "- serverid / id",
+            "- sftphost / host",
+            "- sftpport",
+            "- sftpuser / user",
+            "- sftppass / pass",
             "- path",
             "- ext",
             "- name",
             "- ip",
             "- port",
-            "- gamemode",
-            "",
-            `Ketik *${prefix}setconfigwl* tanpa parameter untuk melihat menu panduan.`
+            "- gamemode"
         ]);
     }
 
     const saved = saveSettingsFile(cfg);
 
-    return sendMenuStyle(sock, m, context, "Config Berhasil Diubah", [
-        "> Status : *SUCCESS / BERHASIL DIPERBARUI*",
-        `> Item : *${keyLabel}*`,
-        `> Nilai Baru : *${sub === "pltc" ? (value.slice(0, 10) + "..." + value.slice(-4)) : cfg[sub === "ext" ? "extension" : (sub === "name" ? "serverName" : (sub === "serverid" || sub === "id" ? "serverId" : (sub === "mode" ? "gamemode" : sub)))]}*`,
-        `> Realtime : *Aktif Langsung Tanpa Restart*`,
-        `> File Tersimpan : *control/settings.js*`,
+    if (!saved) {
+        return sendMenuStyle(sock, m, context, "Gagal Menyimpan", [
+            "> Status : *Gagal Menulis ke control/settings.js*",
+            "Periksa izin akses file server."
+        ]);
+    }
+
+    const displayVal = (sub === "sftppass" || sub === "pass") ? "******" : value;
+
+    return sendMenuStyle(sock, m, context, "Konfigurasi Berhasil Diubah", [
+        "> Status : *SUCCESS / BERHASIL DISIMPAN*",
+        `> Pengaturan : *${keyLabel}*`,
+        `> Nilai Baru : *${displayVal}*`,
         "",
         "*Keterangan:*",
-        "Konfigurasi telah aktif di memori bot saat ini dan tersimpan permanen di file settings.js."
+        "Perubahan langsung aktif dan tersimpan permanen di settings."
     ]);
 }
 
 module.exports = {
     name: "setconfigwl",
     category: "owner",
-    command: ["setconfigwl", "setcfgwl", "configwl", "cfgwl"],
+    command: ["setconfigwl", "setwl", "configsamp"],
     owner: true,
-    description: "Mengatur konfigurasi whitelist SA-MP secara realtime tanpa restart (Owner Only)",
+    description: "Mengubah pengaturan SFTP dan server SA-MP secara langsung (Owner Only)",
     before: async (context) => {
         const { body, prefix } = context;
         const bodyTrim = (body || "").trim();
@@ -230,8 +245,8 @@ module.exports = {
 
         const firstWord = bodyTrim.split(/\s+/)[0].toLowerCase();
         const validTriggers = [
-            ".setconfigwl", ".setcfgwl", ".configwl", ".cfgwl",
-            `${prefix}setconfigwl`, `${prefix}setcfgwl`, `${prefix}configwl`, `${prefix}cfgwl`
+            ".setconfigwl", ".setwl", ".configsamp",
+            `${prefix}setconfigwl`, `${prefix}setwl`, `${prefix}configsamp`
         ];
 
         if (validTriggers.includes(firstWord)) {

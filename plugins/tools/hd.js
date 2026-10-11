@@ -1,9 +1,3 @@
-// ===================================================
-//  Stenly WhatsApp Bot
-//  Creator : Stenly Christian
-//  Updated : 13 September 2026
-// ===================================================
-
 const { generateWAMessageFromContent, downloadContentFromMessage } = require("@itsliaaa/baileys");
 const sharp = require("sharp");
 const { categorySections } = require("../../lib/menu");

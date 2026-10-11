@@ -1,9 +1,3 @@
-// ===================================================
-//  Stenly WhatsApp Bot
-//  Creator : Stenly Christian
-//  Updated : 13 September 2026
-// ===================================================
-
 module.exports = {
     name: "modebot",
     category: "owner",

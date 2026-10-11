@@ -1,10 +1,3 @@
- 
-// ===================================================
-//  Stenly WhatsApp Bot
-//  Creator : Stenly Christian
-//  Updated : 13 September 2026
-// ===================================================
-
 require('./control/settings');
 const {
 default: makeWASocket,
@@ -23,8 +16,8 @@ const fs = require('fs');
 const chalk = require("chalk");
 const { smsg, getBuffer, getSizeMedia } = require('./lib/myfunc');
 
-// Jaring pengaman: jangan biarkan 1 error async (misal rate-overlimit
-// dari WA) membunuh seluruh proses bot.
+
+
 process.on('unhandledRejection', (reason) => {
     console.error('[UNHANDLED REJECTION]', reason?.message || reason);
 });

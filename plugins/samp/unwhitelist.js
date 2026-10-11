@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
 const { generateWAMessageFromContent } = require("@itsliaaa/baileys");
 const { categorySections } = require("../../lib/menu");
+const { deleteRemoteFile, checkRemoteFileExists } = require("../../lib/sftp");
 
 const DB_PATH = path.join(__dirname, "../../lib/database/whitelist.json");
 
@@ -32,88 +32,6 @@ function cleanNumber(jid) {
     return String(jid || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 }
 
-async function checkPterodactylFileExists(sampConfig, fileName) {
-    const domain = (sampConfig.domain || "").replace(/\/+$/, "");
-    const serverId = sampConfig.serverId;
-    const apiKey = sampConfig.pltc;
-    const folderPath = (sampConfig.path || "/scriptfiles/whitelist/").replace(/\\/g, "/");
-    const normalizedFolder = folderPath.replace(/\/+$/, "");
-
-    if (!apiKey || apiKey.includes("YOUR_PTERODACTYL") || !domain || domain.includes("example.com") || !serverId) {
-        return null;
-    }
-
-    try {
-        const url = `${domain}/api/client/servers/${serverId}/files/list?directory=${encodeURIComponent(normalizedFolder)}`;
-        const response = await axios({
-            method: "GET",
-            url,
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Accept": "application/json"
-            },
-            timeout: 10000
-        });
-
-        const files = response.data?.data || [];
-        const exists = files.some(f => (f.attributes?.name || "").toLowerCase() === fileName.toLowerCase());
-        return exists;
-    } catch (error) {
-        console.error(`[UNWHITELIST CHECK ERROR] ${error.message}`);
-        return null;
-    }
-}
-
-async function deletePterodactylFile(sampConfig, fileName) {
-    const domain = (sampConfig.domain || "").replace(/\/+$/, "");
-    const serverId = sampConfig.serverId;
-    const apiKey = sampConfig.pltc;
-    const folderPath = (sampConfig.path || "/scriptfiles/whitelist/").replace(/\\/g, "/");
-    const normalizedFolder = folderPath.replace(/\/+$/, "");
-
-    if (!apiKey || apiKey.includes("YOUR_PTERODACTYL") || !domain || domain.includes("example.com") || !serverId) {
-        return {
-            success: true,
-            simulated: true,
-            message: "Pterodactyl belum dikonfigurasi (simulated)."
-        };
-    }
-
-    try {
-        const url = `${domain}/api/client/servers/${serverId}/files/delete`;
-        const response = await axios({
-            method: "POST",
-            url,
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            },
-            data: {
-                root: normalizedFolder,
-                files: [fileName]
-            },
-            timeout: 15000
-        });
-
-        return {
-            success: response.status >= 200 && response.status < 300,
-            simulated: false,
-            status: response.status
-        };
-    } catch (error) {
-        const status = error.response?.status;
-        const errDetail = error.response?.data?.errors?.[0]?.detail || error.message;
-        console.error(`[UNWHITELIST PTERODACTYL ERROR] ${status || "NET"}: ${errDetail}`);
-        return {
-            success: false,
-            simulated: false,
-            error: errDetail,
-            status
-        };
-    }
-}
-
 function makeButtons(prefix, plugins) {
     return [
         {
@@ -140,7 +58,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
     const { botName, prefix, thumb, plugins } = ctx;
     const contentText = `\`「 ${botName} 」\``;
     const footerText = `\`「 ${title} 」\`\n${lines.join('\n')}\n\n_*Tekan tombol di bawah untuk melihat semua menu*_`;
-    
+
     try {
         const menuMessage = generateWAMessageFromContent(m.chat, {
             buttonsMessage: {
@@ -157,7 +75,7 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
                 headerType: 6
             }
         }, { userJid: m.chat, upload: sock.waUploadToServer });
-        
+
         return await sock.relayMessage(m.chat, menuMessage.message, { messageId: menuMessage.key.id });
     } catch (_) {
         return ctx.reply(`${contentText}\n\n${footerText}`);
@@ -165,123 +83,138 @@ async function sendMenuStyle(sock, m, ctx, title, lines) {
 }
 
 async function handleUnwhitelist(context) {
-    const { sock, m, args, prefix, isOwner, isCreator } = context;
-
-    if (!isOwner && !isCreator) {
-        return sendMenuStyle(sock, m, context, "Akses Ditolak", [
-            "> Status : *Akses Ditolak*",
-            "> Fitur Unwhitelist khusus untuk Owner bot.",
-            "> Hubungi Owner jika ingin menghapus akun whitelist."
-        ]);
-    }
-
+    const { sock, m, args, prefix, sender, isOwner, isCreator } = context;
     const sampConfig = global.samp || {};
+
     const serverName = sampConfig.serverName || "SA-MP Server";
     const extension = sampConfig.extension || ".txt";
 
-    const target = (args[0] || "").trim();
+    const targetInput = (args[0] || "").trim();
 
-    if (!target) {
+    if (!targetInput) {
         return sendMenuStyle(sock, m, context, "Panduan Unwhitelist SA-MP", [
-            "> Akses : *Khusus Owner*",
             `> Server : *${serverName}*`,
             "",
-            "*Cara Penggunaan:*",
-            `> Ketik : *${prefix}unwl Nama_Pemain* atau *.unwl Nama_Pemain*`,
-            "> Contoh : *.unwl Stenly_Christian*",
-            "> Contoh : *.unwl 6285199430173*",
+            "*Cara Menghapus Whitelist:*",
+            `> User Biasa : Ketik *${prefix}unwl* untuk unwhitelist akun sendiri`,
+            `> Owner/Admin : Ketik *${prefix}unwl <Nama_Pemain / Nomor_WA>*`,
             "",
-            "*Keterangan:*",
-            "Menghapus file whitelist di server Pterodactyl dan menghapus nomor dari database bot sehingga nomor tersebut dapat mendaftar kembali."
+            "*Contoh:*",
+            `> *${prefix}unwl*`,
+            `> *${prefix}unwl Stenly_Christian*`,
+            `> *${prefix}unwl 6285199553371*`
         ]);
     }
 
     const db = readDatabase();
-    const cleanTargetNum = cleanNumber(target);
+    let targetKey = null;
+    let targetData = null;
 
-    let foundKey = null;
-    let foundData = null;
+    if (!isOwner && !isCreator) {
+        const senderNum = cleanNumber(sender);
+        const match = Object.entries(db).find(([jid, data]) => {
+            return cleanNumber(jid) === senderNum || cleanNumber(data.sender) === senderNum;
+        });
 
-    for (const [jid, data] of Object.entries(db)) {
-        const isMatchName = (data.name || "").toLowerCase() === target.toLowerCase();
-        const isMatchPhone = cleanNumber(jid) === cleanTargetNum || cleanNumber(data.sender) === cleanTargetNum;
-        if (isMatchName || isMatchPhone) {
-            foundKey = jid;
-            foundData = data;
-            break;
+        if (!match) {
+            return sendMenuStyle(sock, m, context, "Data Tidak Ditemukan", [
+                "> Status : *Nomor Anda Belum Terdaftar*",
+                "",
+                "Nomor WhatsApp Anda belum memiliki karakter yang di-whitelist.",
+                `Daftarkan karakter baru dengan perintah *${prefix}wl Nama_Karakter*.`
+            ]);
+        }
+
+        targetKey = match[0];
+        targetData = match[1];
+
+        if (targetInput.toLowerCase() !== (targetData.name || "").toLowerCase() && targetInput.toLowerCase() !== "self") {
+            return sendMenuStyle(sock, m, context, "Akses Terbatas", [
+                "> Status : *Hanya Bisa Hapus Akun Sendiri*",
+                `> Karakter Anda : *${targetData.name}*`,
+                "",
+                `Ketik *${prefix}unwl ${targetData.name}* untuk konfirmasi hapus akun Anda.`,
+                "Hanya Owner/Admin yang dapat menghapus karakter pemain lain."
+            ]);
+        }
+    } else {
+        const cleanTarget = cleanNumber(targetInput);
+
+        const match = Object.entries(db).find(([jid, data]) => {
+            if (cleanTarget && (cleanNumber(jid) === cleanTarget || cleanNumber(data.sender) === cleanTarget)) {
+                return true;
+            }
+            if ((data.name || "").toLowerCase() === targetInput.toLowerCase()) {
+                return true;
+            }
+            return false;
+        });
+
+        if (match) {
+            targetKey = match[0];
+            targetData = match[1];
+        } else {
+            targetData = {
+                name: targetInput.replace(new RegExp(`\\${extension}$`, "i"), ""),
+                fileName: `${targetInput.replace(new RegExp(`\\${extension}$`, "i"), "")}${extension}`,
+                senderNumber: "-",
+                registeredAt: "-"
+            };
         }
     }
 
-    const targetName = foundData ? foundData.name : target.replace(new RegExp(`\\${extension}$`, 'i'), '');
-    const fileName = foundData?.fileName || (target.toLowerCase().endsWith(extension.toLowerCase()) ? target : `${targetName}${extension}`);
-    const targetPhone = foundData ? (foundData.senderNumber || cleanNumber(foundKey)) : (cleanTargetNum || "-");
+    const fileName = targetData.fileName || `${targetData.name}${extension}`;
 
-    const fileExistsOnPanel = await checkPterodactylFileExists(sampConfig, fileName);
+    let delResult;
+    try {
+        delResult = await deleteRemoteFile(sampConfig, fileName);
+    } catch (err) {
+        delResult = { success: false, simulated: false, error: err.message };
+    }
 
-    if (!foundData && fileExistsOnPanel === false) {
-        return sendMenuStyle(sock, m, context, "Unwhitelist Gagal", [
-            "> Status : *File Tidak Ditemukan*",
-            `> Target : *${targetName}*`,
-            `> File : *${fileName}*`,
-            `> Server : *${serverName}*`,
+    if (!delResult.success && !delResult.simulated) {
+        return sendMenuStyle(sock, m, context, "Gagal Menghapus File", [
+            "> Status : *Gagal Menghubungi Server via SFTP*",
+            `> Target File : *${fileName}*`,
+            `> Error : *${delResult.error || "SFTP Error"}*`,
             "",
-            "*Keterangan:*",
-            `File whitelist *${fileName}* tidak ditemukan di server SA-MP maupun di database bot.`,
-            "Pastikan penulisan nama atau nomor WhatsApp sudah tepat."
+            "File gagal dihapus dari server SA-MP."
         ]);
     }
 
-    let pteroResult = { success: true };
-    if (fileExistsOnPanel !== false) {
-        pteroResult = await deletePterodactylFile(sampConfig, fileName);
-    }
-
-    if (foundKey) {
-        delete db[foundKey];
+    if (targetKey && db[targetKey]) {
+        delete db[targetKey];
         writeDatabase(db);
-    }
-
-    const now = new Date();
-    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} WIB`;
-
-    if (!pteroResult.success && !pteroResult.simulated) {
-        return sendMenuStyle(sock, m, context, "Unwhitelist Sebagian", [
-            "> Status : *File Gagal Dihapus dari Pterodactyl*",
-            `> Nama Pemain : *${targetName}*`,
-            `> File : *${fileName}*`,
-            `> Server : *${serverName}*`,
-            `> Error : *${pteroResult.error || "Gagal menghubungi panel"}*`,
-            "> Catatan : *Data lokal bot telah dibersihkan.*"
-        ]);
     }
 
     return sendMenuStyle(sock, m, context, "Unwhitelist Berhasil", [
         "> Status : *SUCCESS / BERHASIL DIHAPUS*",
-        `> Nama Pemain : *${targetName}*`,
-        `> Nomor WA : *${targetPhone}*`,
-        `> File Dihapus : *${fileName}*`,
+        `> Nama Pemain : *${targetData.name}*`,
         `> Server : *${serverName}*`,
-        `> Tanggal Hapus : *${formattedDate}*`,
+        `> File Terhapus : *${fileName}*`,
+        `> Nomor Pemilik : *${targetData.senderNumber || "-"}*`,
         "",
         "*Keterangan:*",
-        `Karakter *${targetName}* telah dihapus dari whitelist server.`,
-        "Nomor WhatsApp terkait kini dapat mendaftarkan akun baru."
+        "Karakter telah berhasil dicabut dari whitelist server.",
+        "Pemain ini sekarang tidak dapat login ke server sampai didaftarkan kembali."
     ]);
 }
 
 module.exports = {
     name: "unwhitelist",
     category: "samp",
-    command: ["unwhitelist", "unwl"],
-    owner: true,
-    description: "Hapus whitelist pemain SA-MP dari Pterodactyl (Owner Only)",
+    command: ["unwl", "unwhitelist", "delwl"],
+    description: "Menghapus whitelist pemain SA-MP via SFTP",
     before: async (context) => {
         const { body, prefix } = context;
         const bodyTrim = (body || "").trim();
         if (!bodyTrim) return false;
 
         const firstWord = bodyTrim.split(/\s+/)[0].toLowerCase();
-        const validTriggers = [".unwl", ".unwhitelist", `${prefix}unwl`, `${prefix}unwhitelist`];
+        const validTriggers = [
+            ".unwl", ".unwhitelist", ".delwl",
+            `${prefix}unwl`, `${prefix}unwhitelist`, `${prefix}delwl`
+        ];
 
         if (validTriggers.includes(firstWord)) {
             const parts = bodyTrim.split(/\s+/);
